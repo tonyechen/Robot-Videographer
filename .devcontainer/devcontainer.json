@@ -5,8 +5,13 @@
     "--privileged",
     "--network=host",
     "--ipc=host",
+    "--gpus=all",
     "-e",
     "DISPLAY=${localEnv:DISPLAY}",
+    "-e",
+    "NVIDIA_VISIBLE_DEVICES=all",
+    "-e",
+    "NVIDIA_DRIVER_CAPABILITIES=all"
   ],
   "workspaceMount": "source=${localWorkspaceFolder},target=/home/ubuntu/robot_photographer,type=bind",
   "workspaceFolder": "/home/ubuntu/robot_photographer",
@@ -16,6 +21,9 @@
     "source=/tmp/.X11-unix,target=/tmp/.X11-unix,type=bind"
   ],
   "postStartCommand": "sudo apt update && sudo apt -y upgrade && bash -lc 'cd \"${containerWorkspaceFolder}\" && source /opt/ros/humble/setup.bash && rosdep install --from-path src -yi --rosdistro humble && colcon build --symlink-install'",
+  "hostRequirements": {
+    "gpu": true
+  },
   "customizations": {
     "vscode": {
       "extensions": ["ms-python.python", "ms-toolsai.jupyter"]
