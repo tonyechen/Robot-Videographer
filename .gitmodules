@@ -10,3 +10,6 @@
 [submodule "src/yolo_ros"]
 	path = src/yolo_ros
 	url = https://github.com/mgonzs13/yolo_ros.git
+[submodule "src/turtlebot3_simulations"]
+	path = src/turtlebot3_simulations
+	url = https://github.com/ROBOTIS-GIT/turtlebot3_simulations.git
