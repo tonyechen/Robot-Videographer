@@ -55,7 +55,7 @@ def generate_launch_description():
 
             # control tuning
             'control_rate_hz': 10.0,
-            'deadband_px': 12,
+            'deadband_px': 30,
             'kp': 0.0035,          # rad/pixel (tune)
             'max_step': 0.08,
             'cmd_time_sec': 0.15,
@@ -65,9 +65,14 @@ def generate_launch_description():
             'max_angle': 1.6,
 
             # behavior if person disappears
-            'lost_timeout_sec': 0.7,
+            'lost_timeout_sec': 5.0,
             'return_to_center_on_lost': False,
             'center_angle': 0.0,
+
+            # direct position control tuning
+            'position_gain': 0.8,       # increase if person not centering; decrease if overshooting
+            'detection_smoothing': 0.5,  # higher = faster response, lower = less jitter
+            'lock_proximity_px': 400,    # max px jump per frame before re-match is rejected
         }]
     )
 

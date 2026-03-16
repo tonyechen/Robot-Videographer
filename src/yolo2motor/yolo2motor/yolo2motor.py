@@ -33,6 +33,7 @@ class YoloPersonTracker(Node):
         self.declare_parameter('return_to_center_on_lost', False)
         self.declare_parameter('lock_proximity_px', 150)
         self.declare_parameter('detection_smoothing', 0.3)  # low-pass alpha (0=frozen, 1=raw)
+        self.declare_parameter('position_gain', 0.4)  # scale factor on angle mapping (0-1, tune down to reduce overshoot)
 
         # ---- Load params ----
         self.detections_topic = self.get_parameter('detections_topic').value
@@ -50,6 +51,7 @@ class YoloPersonTracker(Node):
         self.return_on_lost = bool(self.get_parameter('return_to_center_on_lost').value)
         self.lock_proximity_px = int(self.get_parameter('lock_proximity_px').value)
         self.detection_smoothing = float(self.get_parameter('detection_smoothing').value)
+        self.position_gain = float(self.get_parameter('position_gain').value)
 
         # ---- State ----
         self._last_seen_time = 0.0
@@ -86,7 +88,8 @@ class YoloPersonTracker(Node):
             f"  Deadband: {self.deadband_px}px\n"
             f"  Angle limits: [{self.min_angle}, {self.max_angle}] rad\n"
             f"  Lost timeout: {self.lost_timeout}s\n"
-            f"  Detection smoothing: {self.detection_smoothing}"
+            f"  Detection smoothing: {self.detection_smoothing}\n"
+            f"  Position gain: {self.position_gain}"
         )
 
     def log_status(self):
@@ -134,30 +137,31 @@ class YoloPersonTracker(Node):
             try:
                 cx = float(det.bbox.center.position.x)
                 cy = float(det.bbox.center.position.y)
+                area = float(det.bbox.size.x) * float(det.bbox.size.y)
             except Exception:
                 continue
-            candidates.append((cx, cy, float(det.score)))
+            candidates.append((cx, cy, float(det.score), area))
 
         if not candidates:
             return
 
         if not self._locked:
-            # Acquire highest-confidence person
-            best = max(candidates, key=lambda c: c[2])
-            chosen_cx, chosen_cy, chosen_score = best
+            # Acquire person closest to image center (most likely directly in front)
+            center_x = 0.5 * self.image_width
+            best = min(candidates, key=lambda c: abs(c[0] - center_x))
+            chosen_cx, chosen_cy, chosen_score, _ = best
             self._locked = True
             self.get_logger().info(
-                f"[LOCK] Acquired target at x={chosen_cx:.1f}, y={chosen_cy:.1f} (score={chosen_score:.2f})"
+                f"[LOCK] Acquired target at x={chosen_cx:.1f}, y={chosen_cy:.1f} "
+                f"(score={chosen_score:.2f})"
             )
         else:
-            # Re-match to closest candidate to last known position
+            # Re-match to candidate closest to last known position — no distance rejection
+            # when locked so fast-moving targets don't get dropped
             def dist(c):
                 return ((c[0] - self._locked_cx) ** 2 + (c[1] - self._locked_cy) ** 2) ** 0.5
 
-            closest = min(candidates, key=dist)
-            if dist(closest) > self.lock_proximity_px:
-                return  # No match close enough — hold position, let lost_timeout handle unlock
-            chosen_cx, chosen_cy, chosen_score = closest
+            chosen_cx, chosen_cy, chosen_score, _ = min(candidates, key=dist)
 
         # Update lock position
         self._locked_cx = chosen_cx
@@ -165,7 +169,7 @@ class YoloPersonTracker(Node):
         self._last_seen_time = time.time()
         self._matching_detection_count += 1
 
-        # Low-pass filter to reduce jitter
+        # Low-pass filter to suppress per-frame jitter
         if self._smoothed_cx_px is None:
             self._smoothed_cx_px = chosen_cx
         else:
@@ -186,8 +190,9 @@ class YoloPersonTracker(Node):
         # Map pixel error directly to absolute joint angle.
         # err_px > 0 means person is right of center -> camera turns right -> negative angle.
         # Flip the sign of max_angle in the launch file if the joint moves the wrong way.
+        # position_gain scales aggressiveness: 1.0 = full range at image edge, 0.4 = gentler.
         half_width = 0.5 * self.image_width
-        target_angle = self.center_angle - (err_px / half_width) * self.max_angle
+        target_angle = self.center_angle - (err_px / half_width) * self.max_angle * self.position_gain
         target_angle = max(self.min_angle, min(self.max_angle, target_angle))
 
         self.get_logger().info(
