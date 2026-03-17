@@ -1,83 +1,50 @@
 from launch import LaunchDescription
-from launch.actions import IncludeLaunchDescription
-from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch_ros.actions import Node
-from launch.substitutions import PathJoinSubstitution
-from ament_index_python.packages import get_package_share_directory
 
 
 def generate_launch_description():
-    # 1) Include the TurtleBot3 GIX hardware launch
-    tb3_gix_bringup_share = get_package_share_directory('turtlebot3_gix_bringup')
-    hardware_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(
-            PathJoinSubstitution([tb3_gix_bringup_share, 'launch', 'hardware.launch.py'])
-        )
-    )
-
-    # 2) USB camera node
-    image_width = 640
-    image_height = 360
-
-    usb_cam = Node(
-        package='usb_cam',
-        executable='usb_cam_node_exe',
-        name='usb_cam',
-        output='screen',
-        parameters=[{
-            'video_device': '/dev/video0',
-            'image_width': image_width,
-            'image_height': image_height,
-        }],
-        remappings=[
-            ('/image_raw', '/camera/rgb/image_raw'),
-        ],
-    )
-
-    # 3) YOLO -> motor tracker
-    yolo2motor = Node(
-        package='yolo2motor',
-        executable='yolo2motor',
-        name='yolo2motor',
-        output='screen',
-        parameters=[{
-            # topics / joint
-            'detections_topic': '/yolo/detections',
-            'controller_topic': '/gix_controller/joint_trajectory',
-            'joint_name': 'gix',
-
-            # track humans
-            'label': 'person',
-            'min_score': 0.5,
-
-            # must match camera width
-            'image_width': image_width,
-
-            # control tuning
-            'control_rate_hz': 10.0,
-            'deadband_px': 30,
-            'kp': 0.0035,          # rad/pixel (tune)
-            'max_step': 0.08,
-            'cmd_time_sec': 0.15,
-
-            # joint limits
-            'min_angle': -1.6,
-            'max_angle': 1.6,
-
-            # behavior if person disappears
-            'lost_timeout_sec': 5.0,
-            'return_to_center_on_lost': False,
-            'center_angle': 0.0,
-
-            # direct position control tuning
-            'position_gain': 0.8,       # increase if person not centering; decrease if overshooting
-            'detection_smoothing': 0.5,  # higher = faster response, lower = less jitter
-            'lock_proximity_px': 400,    # max px jump per frame before re-match is rejected
-        }]
-    )
-
     return LaunchDescription([
-        hardware_launch,
-        usb_cam,
-        yolo2motor,
+        Node(
+            package='yolo2motor',
+            executable='yolo2motor',
+            name='yolo2motor',
+            output='screen',
+            parameters=[{
+                # topics / joint
+                'detections_topic': '/yolo/detections',
+                'controller_topic': '/gix_controller/joint_trajectory',
+                'joint_name': 'gix',
+
+                # track humans
+                'label': 'person',
+                'min_score': 0.5,
+
+                # must match camera width
+                'image_width': 640,
+
+                # control tuning
+                'deadband_px': 30,
+                'cmd_time_sec': 0.15,
+
+                # PID gains
+                'kp': 0.008,             # proportional — drives toward center
+                'ki': 0.0,               # integral — disabled until P+D is tuned
+                'kd': 0.05,              # derivative — dampens overshoot
+                'max_step': 0.06,        # max angle change per update (rad)
+                'integral_limit': 30.0,  # anti-windup clamp (px)
+
+                # joint limits
+                'min_angle': -1.6,
+                'max_angle': 1.6,
+                'center_angle': 0.0,
+
+                # behavior if person disappears
+                'lost_timeout_sec': 5.0,
+                'return_to_center_on_lost': False,
+
+                # tracking
+                'detection_smoothing': 0.4,
+                'lock_proximity_px': 400,
+            }]
+        )
     ])

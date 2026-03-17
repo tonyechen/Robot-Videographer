@@ -4,14 +4,13 @@ import rclpy
 from rclpy.node import Node
 from trajectory_msgs.msg import JointTrajectory, JointTrajectoryPoint
 
-# mgonzs13/yolo_ros message types
 from yolo_msgs.msg import DetectionArray as YoloDetectionArray
 
 
 class YoloPersonTracker(Node):
     """
     Pan a camera joint to keep a locked 'person' detection centered.
-    Uses direct position control: maps pixel error to an absolute joint angle.
+    Uses PID control on the pixel error to drive the joint angle.
     """
 
     def __init__(self):
@@ -24,16 +23,20 @@ class YoloPersonTracker(Node):
         self.declare_parameter('label', 'person')
         self.declare_parameter('min_score', 0.5)
         self.declare_parameter('image_width', 640)
-        self.declare_parameter('deadband_px', 12)
+        self.declare_parameter('deadband_px', 30)
         self.declare_parameter('cmd_time_sec', 0.15)
         self.declare_parameter('min_angle', -1.6)
         self.declare_parameter('max_angle', 1.6)
         self.declare_parameter('center_angle', 0.0)
         self.declare_parameter('lost_timeout_sec', 5.0)
         self.declare_parameter('return_to_center_on_lost', False)
-        self.declare_parameter('lock_proximity_px', 150)
-        self.declare_parameter('detection_smoothing', 0.3)  # low-pass alpha (0=frozen, 1=raw)
-        self.declare_parameter('position_gain', 0.4)  # scale factor on angle mapping (0-1, tune down to reduce overshoot)
+        self.declare_parameter('lock_proximity_px', 400)
+        self.declare_parameter('detection_smoothing', 0.3)
+        self.declare_parameter('kp', 0.003)   # proportional gain
+        self.declare_parameter('ki', 0.0)     # integral gain
+        self.declare_parameter('kd', 0.01)    # derivative gain — dampens overshoot
+        self.declare_parameter('max_step', 0.05)          # max angle change per update (rad)
+        self.declare_parameter('integral_limit', 30.0)    # clamp integral accumulation (px)
 
         # ---- Load params ----
         self.detections_topic = self.get_parameter('detections_topic').value
@@ -51,12 +54,21 @@ class YoloPersonTracker(Node):
         self.return_on_lost = bool(self.get_parameter('return_to_center_on_lost').value)
         self.lock_proximity_px = int(self.get_parameter('lock_proximity_px').value)
         self.detection_smoothing = float(self.get_parameter('detection_smoothing').value)
-        self.position_gain = float(self.get_parameter('position_gain').value)
+        self.kp = float(self.get_parameter('kp').value)
+        self.ki = float(self.get_parameter('ki').value)
+        self.kd = float(self.get_parameter('kd').value)
+        self.max_step = float(self.get_parameter('max_step').value)
+        self.integral_limit = float(self.get_parameter('integral_limit').value)
 
         # ---- State ----
         self._last_seen_time = 0.0
         self._smoothed_cx_px = None
         self._current_angle = self.center_angle
+
+        # ---- PID state ----
+        self._prev_err_px = 0.0
+        self._integral_px = 0.0
+        self._prev_time = None
 
         # ---- Lock-on state ----
         self._locked = False
@@ -74,29 +86,25 @@ class YoloPersonTracker(Node):
             YoloDetectionArray, self.detections_topic, self.on_detections, 10
         )
 
-        # ---- Lost-target check + status timer ----
         self.status_timer = self.create_timer(3.0, self.log_status)
 
         self.get_logger().info(
-            f"=== YoloPersonTracker Started (Direct Position) ===\n"
+            f"=== YoloPersonTracker Started (PID) ===\n"
             f"  Tracking label: '{self.label}'\n"
-            f"  Detections topic: {self.detections_topic}\n"
-            f"  Controller topic: {self.controller_topic}\n"
-            f"  Joint name: {self.joint_name}\n"
-            f"  Image width: {self.image_width}px\n"
-            f"  Min score: {self.min_score}\n"
-            f"  Deadband: {self.deadband_px}px\n"
-            f"  Angle limits: [{self.min_angle}, {self.max_angle}] rad\n"
-            f"  Lost timeout: {self.lost_timeout}s\n"
-            f"  Detection smoothing: {self.detection_smoothing}\n"
-            f"  Position gain: {self.position_gain}"
+            f"  kp={self.kp}, ki={self.ki}, kd={self.kd}\n"
+            f"  max_step={self.max_step} rad, deadband={self.deadband_px}px\n"
+            f"  Angle limits: [{self.min_angle}, {self.max_angle}] rad"
         )
+
+    def _reset_pid(self):
+        self._prev_err_px = 0.0
+        self._integral_px = 0.0
+        self._prev_time = None
 
     def log_status(self):
         now = time.time()
         seen_ago = now - self._last_seen_time if self._last_seen_time > 0 else float('inf')
 
-        # Also check for lost target here
         if self._locked and (now - self._last_seen_time) > self.lost_timeout:
             self.get_logger().warn(
                 f"[CONTROL] Target lost after {self.lost_timeout:.1f}s — unlocking."
@@ -105,6 +113,7 @@ class YoloPersonTracker(Node):
             self._locked_cx = None
             self._locked_cy = None
             self._smoothed_cx_px = None
+            self._reset_pid()
             if self.return_on_lost:
                 self._move_to(self.center_angle)
 
@@ -127,7 +136,6 @@ class YoloPersonTracker(Node):
         if len(msg.detections) == 0:
             return
 
-        # Collect all valid person detections
         candidates = []
         for det in msg.detections:
             if det.class_name != self.label:
@@ -146,57 +154,64 @@ class YoloPersonTracker(Node):
             return
 
         if not self._locked:
-            # Acquire person closest to image center (most likely directly in front)
             center_x = 0.5 * self.image_width
             best = min(candidates, key=lambda c: abs(c[0] - center_x))
             chosen_cx, chosen_cy, chosen_score, _ = best
             self._locked = True
+            self._reset_pid()
             self.get_logger().info(
                 f"[LOCK] Acquired target at x={chosen_cx:.1f}, y={chosen_cy:.1f} "
                 f"(score={chosen_score:.2f})"
             )
         else:
-            # Re-match to candidate closest to last known position — no distance rejection
-            # when locked so fast-moving targets don't get dropped
             def dist(c):
                 return ((c[0] - self._locked_cx) ** 2 + (c[1] - self._locked_cy) ** 2) ** 0.5
-
             chosen_cx, chosen_cy, chosen_score, _ = min(candidates, key=dist)
 
-        # Update lock position
         self._locked_cx = chosen_cx
         self._locked_cy = chosen_cy
         self._last_seen_time = time.time()
         self._matching_detection_count += 1
 
-        # Low-pass filter to suppress per-frame jitter
+        # Low-pass filter
         if self._smoothed_cx_px is None:
             self._smoothed_cx_px = chosen_cx
         else:
             alpha = self.detection_smoothing
             self._smoothed_cx_px = alpha * chosen_cx + (1 - alpha) * self._smoothed_cx_px
 
-        self.get_logger().debug(
-            f"[DETECT] x={chosen_cx:.1f}, smoothed={self._smoothed_cx_px:.1f} (score={chosen_score:.2f})"
-        )
-
-        # ---- Direct position control ----
+        # ---- PID control ----
         center_px = 0.5 * self.image_width
         err_px = self._smoothed_cx_px - center_px
 
         if abs(err_px) <= self.deadband_px:
+            self._reset_pid()
             return
 
-        # Map pixel error directly to absolute joint angle.
-        # err_px > 0 means person is right of center -> camera turns right -> negative angle.
-        # Flip the sign of max_angle in the launch file if the joint moves the wrong way.
-        # position_gain scales aggressiveness: 1.0 = full range at image edge, 0.4 = gentler.
-        half_width = 0.5 * self.image_width
-        target_angle = self.center_angle - (err_px / half_width) * self.max_angle * self.position_gain
+        now = time.time()
+        dt = (now - self._prev_time) if self._prev_time is not None else 0.1
+        dt = max(0.01, min(dt, 1.0))  # clamp dt to sane range
+        self._prev_time = now
+
+        # Integral with anti-windup
+        self._integral_px += err_px * dt
+        self._integral_px = max(-self.integral_limit, min(self.integral_limit, self._integral_px))
+
+        # Derivative
+        d_err = (err_px - self._prev_err_px) / dt
+        self._prev_err_px = err_px
+
+        # PID output — negative because right of center (positive err) → decrease angle
+        step = -(self.kp * err_px + self.ki * self._integral_px + self.kd * d_err)
+        step = max(-self.max_step, min(self.max_step, step))
+
+        target_angle = self._current_angle + step
         target_angle = max(self.min_angle, min(self.max_angle, target_angle))
 
         self.get_logger().info(
-            f"[POS] err={err_px:.1f}px -> angle={target_angle:.3f} rad"
+            f"[PID] err={err_px:.1f}px  P={self.kp*err_px:.4f}  "
+            f"I={self.ki*self._integral_px:.4f}  D={self.kd*d_err:.4f}  "
+            f"step={step:.3f} -> angle={target_angle:.3f} rad"
         )
 
         self._move_to(target_angle)
