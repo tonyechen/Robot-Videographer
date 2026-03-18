@@ -129,8 +129,7 @@ class NavigatorNode(Node):
         motor_angle = self.motor_angle_rad
 
         # ── Find minimum distance in the cone ──────────────────────────────
-        # had to negate motor_angle because LiDAR angles are CCW-positive but motor is CW-positive
-        min_distance = self._min_distance_in_cone(scan, -motor_angle, self.span_rad)
+        min_distance = self._min_distance_in_cone(scan, motor_angle, self.span_rad)
 
         if min_distance is None:
             self.get_logger().warn(
