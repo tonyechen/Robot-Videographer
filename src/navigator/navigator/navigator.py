@@ -37,7 +37,7 @@ class NavigatorNode(Node):
 
         # ── Parameters ────────────────────────────────────────────────────────
         self.declare_parameter('span_deg', 2.0)          # ±degrees around motor angle
-        self.declare_parameter('threshold_distance', 0.5) # metres to stay back
+        self.declare_parameter('threshold_distance', 3) # metres to stay back
         self.declare_parameter('joint_name', 'gix')       # joint to look for
         self.declare_parameter('scan_topic', '/scan')
         self.declare_parameter('goal_topic', '/goal_pose')

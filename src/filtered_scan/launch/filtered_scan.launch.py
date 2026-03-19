@@ -56,6 +56,16 @@ def generate_launch_description():
                     'base_frame': 'base_footprint',
                     'odom_frame': 'odom',
                     'map_frame': 'map',
+                    'use_scan_matching': True,
+                    'minimum_travel_distance': 0.1,
+                    'minimum_travel_heading': 0.1,
+                    'link_match_minimum_response_fine': 0.45,
+                    'link_scan_maximum_distance': 1.5,
+                    'do_loop_closing': True,
+                    'coarse_search_angle_offset': 0.349,
+                    'coarse_angle_resolution': 0.0349,
+                    'minimum_angle_penalty': 0.9,
+                    'minimum_distance_penalty': 0.5,
                 }]
             )
         ]
