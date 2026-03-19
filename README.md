@@ -1,7 +1,6 @@
 # Robot Videographer
 
-<!-- Add a photo of your robot here -->
-<!-- ![Robot Photo](docs/robot_photo.jpg) -->
+![Robot Photo](robot.png)
 
 ## Project Overview
 
@@ -14,8 +13,7 @@ Robot Videographer is an autonomous camera robot built on a TurtleBot3 (Burger) 
 
 ## Video Demo
 
-<!-- Add your video demo link here -->
-<!-- [Watch the demo](https://youtu.be/your-link-here) -->
+https://drive.google.com/file/d/12-Uf88K4ku7i8u4b3XxFzTL7EZ6tk2Iw/view?usp=drivesdk
 
 ## Team
 
