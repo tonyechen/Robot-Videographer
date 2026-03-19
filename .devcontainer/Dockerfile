@@ -53,5 +53,7 @@ RUN echo 'source /usr/share/gazebo/setup.sh' >> ~/.bashrc
 RUN echo "export RMW_IMPLEMENTATION=rmw_fastrtps_cpp" >> ~/.bashrc
 RUN echo "export ROS_DOMAIN_ID=67 # change to your number" >> ~/.bashrc
 RUN echo "export LIBGL_ALWAYS_SOFTWARE=1" >> ~/.bashrc
+RUN echo "export TURTLEBOT3_MODEL=burger" >> ~/.bashrc
+RUN echo "export LDS_MODEL=LDS-02" >> ~/.bashrc
 
 CMD ["bash"]

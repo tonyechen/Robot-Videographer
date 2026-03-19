@@ -1,79 +1,135 @@
-# Robot-Videographer
+# Robot Videographer
 
-Install dependencies for Ros2:
-```cmd
-rosdep install --from-paths src --ignore-src -r -y
+<!-- Add a photo of your robot here -->
+<!-- ![Robot Photo](docs/robot_photo.jpg) -->
+
+## Project Overview
+
+Robot Videographer is an autonomous camera robot built on a TurtleBot3 (Burger) platform. It uses a pan-tilt camera mount driven by a Dynamixel servo, a 2D LiDAR, and an onboard computer to:
+
+1. **Detect and lock onto a person** using YOLO object detection (running on a PC via ROS 2).
+2. **Pan the camera** to keep the person centered in frame using a PID-controlled Dynamixel motor.
+3. **Follow the person** at a set distance using LiDAR-based PID velocity control.
+4. **Build a map** of the environment in real-time with SLAM Toolbox, while filtering the tracked person out of the costmap to avoid treating them as a static obstacle.
+
+## Video Demo
+
+<!-- Add your video demo link here -->
+<!-- [Watch the demo](https://youtu.be/your-link-here) -->
+
+## Team
+
+- Alan Liu
+- Xiangpeng Yu
+- Tony Chen
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+
+- Docker with NVIDIA GPU support (or a native ROS 2 Humble install)
+- NVIDIA GPU (for YOLO inference on the PC)
+- TurtleBot3 Burger with Dynamixel servo camera mount and USB camera
+
+### Option A: Dev Container (Recommended)
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/tonyechen/Robot-Videographer.git
+   cd Robot-Videographer
+   ```
+
+2. Open in VS Code and reopen in container when prompted. The container will:
+   - Install all ROS 2 dependencies via `rosdep`
+   - Build all packages with `colcon build`
+
+### Option B: Native Install
+
+1. Install [ROS 2 Humble](https://docs.ros.org/en/humble/Installation.html)
+
+2. Install dependencies:
+   ```bash
+   sudo apt install ros-humble-slam-toolbox ros-humble-nav2-bringup \
+     ros-humble-turtlebot3 ros-humble-usb-cam
+   pip3 install ultralytics torch torchvision "numpy<2"
+   rosdep install --from-paths src --ignore-src -r -y
+   ```
+
+3. Build:
+   ```bash
+   colcon build
+   source install/setup.bash
+   ```
+
+4. Add to your `~/.bashrc`:
+   ```bash
+   export TURTLEBOT3_MODEL=burger
+   export LDS_MODEL=LDS-02
+   export ROS_DOMAIN_ID=<your_domain_id>
+   ```
+
+---
+
+## Usage Instructions
+
+### On the Robot (via SSH)
+
+1. Launch hardware (motors + LiDAR):
+   ```bash
+   ros2 launch turtlebot3_gix_bringup hardware.launch.py
+   ```
+
+2. Launch camera:
+   ```bash
+   ros2 run usb_cam usb_cam_node_exe --ros-args \
+     -p video_device:="/dev/video0" \
+     -p image_width:=640 \
+     -p image_height:=360 \
+     -p framerate:=30.0 \
+     -p pixel_format:="mjpeg2rgb"
+   ```
+
+### On the PC
+
+Launch the full PC stack (YOLO + tracking + SLAM/Nav2 + navigator):
+```bash
+ros2 launch navigator pc_stack.launch.py
 ```
 
-Launching gix bringup:
-```cmd
-ros2 launch turtlebot3_gix_bringup hardware.launch.py
+This starts in sequence:
+1. `filtered_scan` — filters the person out of the LiDAR costmap + starts SLAM and Nav2
+2. `navigator` — PID velocity controller to follow the person at a set distance
+3. `yolo_ros` — YOLO person detection (subscribes to `/image_raw`)
+4. `yolo2motor` — pans the camera servo to keep the person centered
+
+### Teleop (manual control for testing)
+```bash
+ros2 run turtlebot3_teleop teleop_keyboard
 ```
 
-Motor Testing
-```cmd
+### Motor testing
+```bash
 ros2 topic pub --once /gix_controller/joint_trajectory trajectory_msgs/msg/JointTrajectory \
-"{joint_names: ['gix'], points: [{positions: [1.0], time_from_start: {sec: 2}}]}"
+  "{joint_names: ['gix'], points: [{positions: [1.0], time_from_start: {sec: 2}}]}"
 ```
 
-launch camera at 1080p 30fps:
-```cmd
-ros2 run usb_cam usb_cam_node_exe --ros-args \
-  -p video_device:="/dev/video0" \
-  -p image_width:=1920 \
-  -p image_height:=1080 \
-  -p framerate:=30.0 \
-  -p pixel_format:="mjpeg2rgb"
-```
+---
 
-launch camera for yolo (on turtlebot3):
-```cmd
-ros2 run usb_cam usb_cam_node_exe --ros-args \
-  -p video_device:="/dev/video0" \
-  -p image_width:=640 \
-  -p image_height:=360 \
-  -p framerate:=30.0 \
-  -p pixel_format:="mjpeg2rgb"
-```
-launch yolo on pc:
-```cmd
-ros2 launch yolo_bringup yolo.launch.py input_image_topic:=/image_raw
-```
+## Package Overview
 
-## yolo2motor — Person Tracking
+| Package | Description |
+|---|---|
+| `yolo2motor` | Locks onto a detected person and pans the camera servo via PID |
+| `navigator` | LiDAR-based PID controller to follow the person at a set distance |
+| `filtered_scan` | Filters the person's LiDAR returns to prevent them being mapped as an obstacle |
+| `yolo_ros` | YOLO object detection node (third-party) |
+| `turtlebot3` | TurtleBot3 hardware drivers (third-party) |
+| `DynamixelSDK` | Dynamixel servo SDK (third-party) |
 
-`yolo2motor` subscribes to YOLO detections and pans the camera joint to keep a detected person centered in frame using a P controller.
+---
 
-**How it works:**
-1. YOLO publishes detections on `/yolo/detections`
-2. `yolo2motor` picks the highest-confidence `person` detection
-3. It calculates the pixel error between the detection center and the image center
-4. It sends a `JointTrajectory` command to `/gix_controller/joint_trajectory` to correct the angle
+## License
 
-### Launch everything at once (hardware + camera + tracker):
-```cmd
-ros2 launch yolo2motor yolo2motor_launch.py
-```
-
-> **Note:** YOLO must be running separately on your PC:
-> ```cmd
-> ros2 launch yolo_bringup yolo.launch.py input_image_topic:=/camera/rgb/image_raw
-> ```
-
-### Or run just the tracker node:
-```cmd
-ros2 run yolo2motor yolo2motor
-```
-
-### Key parameters (tunable at launch):
-| Parameter | Default | Description |
-|---|---|---|
-| `label` | `person` | Object class to track |
-| `min_score` | `0.5` | Minimum detection confidence |
-| `image_width` | `640` | Must match camera stream width |
-| `kp` | `0.0035` | P gain (radians per pixel) |
-| `deadband_px` | `12` | Ignore errors smaller than this (pixels) |
-| `max_step` | `0.08` | Max joint movement per update (radians) |
-| `min_angle` / `max_angle` | `-1.6` / `1.6` | Joint travel limits (radians) |
-| `lost_timeout_sec` | `0.7` | Seconds before target is considered lost |
-| `return_to_center_on_lost` | `false` | Return to center when target is lost |
+See [LICENSE](LICENSE) for project license and all third-party dependency licenses.

@@ -1,0 +1,65 @@
+# Robot Videographer — License
+
+## Project Code
+
+Copyright (c) 2025 Alan Liu, Anthony Chen, Tony Chen
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+## Third-Party Dependencies
+
+### ROS 2 Humble
+- License: Apache License 2.0
+- https://github.com/ros2/ros2
+
+### TurtleBot3 & TurtleBot3 Messages
+- License: Apache License 2.0
+- https://github.com/ROBOTIS-GIT/turtlebot3
+
+### SLAM Toolbox
+- License: GNU Lesser General Public License v2.1
+- https://github.com/SteveMacenski/slam_toolbox
+
+### Nav2 (Navigation2)
+- License: Apache License 2.0
+- https://github.com/ros-navigation/navigation2
+
+### yolo_ros
+- License: GNU General Public License v3.0
+- https://github.com/mgonzs13/yolo_ros
+
+### Ultralytics YOLO
+- License: GNU Affero General Public License v3.0 (AGPL-3.0)
+- https://github.com/ultralytics/ultralytics
+
+### DynamixelSDK
+- License: Apache License 2.0
+- https://github.com/ROBOTIS-GIT/DynamixelSDK
+
+### usb_cam
+- License: BSD 2-Clause License
+- https://github.com/ros-drivers/usb_cam
+
+### PyTorch
+- License: BSD 3-Clause License
+- https://github.com/pytorch/pytorch
+
+### scipy
+- License: BSD 3-Clause License
+- https://github.com/scipy/scipy
+
+### NumPy
+- License: BSD 3-Clause License
+- https://github.com/numpy/numpy
