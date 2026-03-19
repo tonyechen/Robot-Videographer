@@ -4,6 +4,8 @@
 
 ![Robot Simulation](robot2.png)
 
+![Concept Photo](robot3.png)
+
 ## Project Overview
 
 Robot Videographer is an autonomous camera robot built on a TurtleBot3 (Burger) platform. It uses a pan-tilt camera mount driven by a Dynamixel servo, a 2D LiDAR, and an onboard computer to:
